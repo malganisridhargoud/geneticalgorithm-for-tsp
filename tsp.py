@@ -2,172 +2,198 @@ import streamlit as st
 import random
 import math
 import matplotlib.pyplot as plt
+import io
 
-# -----------------------------
-# 🎯 Helper Functions
-# -----------------------------
+# ---------------------------
+# UPDATED getCity() TO READ UPLOADED FILE
+# ---------------------------
 
-def calc_distance(cities):
-    """Calculate total distance of a route."""
-    total_dist = 0
+def getCity(uploaded_file):
+    cities = []
+    content = uploaded_file.read().decode("utf-8").strip().split("\n")
+
+    for line in content:
+        node_city_val = line.split()
+        cities.append(
+            [node_city_val[0], float(node_city_val[1]), float(node_city_val[2])]
+        )
+    return cities
+
+
+# ---------------------------
+# ORIGINAL FUNCTIONS
+# ---------------------------
+
+def calcDistance(cities):
+    total_sum = 0
     for i in range(len(cities) - 1):
-        cityA, cityB = cities[i], cities[i + 1]
-        total_dist += math.sqrt((cityB[1] - cityA[1]) ** 2 + (cityB[2] - cityA[2]) ** 2)
-    # Return to start city
-    total_dist += math.sqrt((cities[-1][1] - cities[0][1]) ** 2 + (cities[-1][2] - cities[0][2]) ** 2)
-    return total_dist
+        cityA = cities[i]
+        cityB = cities[i + 1]
+        d = math.sqrt((cityB[1] - cityA[1]) ** 2 + (cityB[2] - cityA[2]) ** 2)
+        total_sum += d
+
+    cityA = cities[0]
+    cityB = cities[-1]
+    d = math.sqrt((cityB[1] - cityA[1]) ** 2 + (cityB[2] - cityA[2]) ** 2)
+    total_sum += d
+    return total_sum
 
 
-def get_realistic_cities():
-    """
-    Simulate real-world city-like coordinates in 2D plane.
-    Coordinates mimic a simplified world map.
-    """
-    return [
-        ["Delhi", 90, 80],
-        ["Mumbai", 40, 40],
-        ["Kolkata", 130, 70],
-        ["Chennai", 70, 20],
-        ["Bangalore", 60, 10],
-        ["Hyderabad", 80, 30],
-        ["Ahmedabad", 50, 50],
-        ["Pune", 55, 35],
-        ["Jaipur", 75, 65],
-        ["Lucknow", 100, 75],
-    ]
-
-
-def select_population(cities, size):
-    """Create an initial population of random paths."""
+def selectPopulation(cities, size):
     population = []
-    for _ in range(size):
-        route = cities.copy()
-        random.shuffle(route)
-        population.append([calc_distance(route), route])
-    return population, min(population, key=lambda x: x[0])
+    for i in range(size):
+        c = cities.copy()
+        random.shuffle(c)
+        distance = calcDistance(c)
+        population.append([distance, c])
+    fitest = sorted(population)[0]
+    return population, fitest
 
 
-def genetic_algorithm(population, num_cities, tournament_size, mutation_rate, crossover_rate, target):
-    """Core Genetic Algorithm loop."""
-    generations = 0
-    while generations < 200:
-        new_pop = []
-        sorted_pop = sorted(population, key=lambda x: x[0])
+def geneticAlgorithm(
+    population, lenCities, TOURNAMENT_SELECTION_SIZE,
+    MUTATION_RATE, CROSSOVER_RATE, TARGET, progress_callback=None):
 
-        # Keep best 2 (elitism)
-        new_pop.extend(sorted_pop[:2])
+    gen_number = 0
+    
+    for i in range(200):
+        new_population = []
 
-        # Generate children
-        for _ in range((len(population) - 2) // 2):
-            parent1 = min(random.choices(population, k=tournament_size), key=lambda x: x[0])
-            parent2 = min(random.choices(population, k=tournament_size), key=lambda x: x[0])
+        # Elitism
+        new_population.append(sorted(population)[0])
+        new_population.append(sorted(population)[1])
 
-            # Crossover
-            if random.random() < crossover_rate:
-                point = random.randint(0, num_cities - 1)
-                child1 = parent1[1][:point] + [c for c in parent2[1] if c not in parent1[1][:point]]
-                child2 = parent2[1][:point] + [c for c in parent1[1] if c not in parent2[1][:point]]
+        for i in range(int((len(population) - 2) / 2)):
+
+            # CROSSOVER
+            if random.random() < CROSSOVER_RATE:
+                parent1 = sorted(random.choices(population, k=TOURNAMENT_SELECTION_SIZE))[0]
+                parent2 = sorted(random.choices(population, k=TOURNAMENT_SELECTION_SIZE))[0]
+
+                point = random.randint(0, lenCities - 1)
+
+                child1 = parent1[1][0:point]
+                for j in parent2[1]:
+                    if j not in child1:
+                        child1.append(j)
+
+                child2 = parent2[1][0:point]
+                for j in parent1[1]:
+                    if j not in child2:
+                        child2.append(j)
             else:
-                child1, child2 = parent1[1][:], parent2[1][:]
+                child1 = random.choice(population)[1]
+                child2 = random.choice(population)[1]
 
-            # Mutation (swap two cities)
-            if random.random() < mutation_rate:
-                i, j = random.sample(range(num_cities), 2)
-                child1[i], child1[j] = child1[j], child1[i]
-            if random.random() < mutation_rate:
-                i, j = random.sample(range(num_cities), 2)
-                child2[i], child2[j] = child2[j], child2[i]
+            # MUTATION
+            if random.random() < MUTATION_RATE:
+                p1, p2 = random.randint(0, lenCities - 1), random.randint(0, lenCities - 1)
+                child1[p1], child1[p2] = child1[p2], child1[p1]
 
-            new_pop.append([calc_distance(child1), child1])
-            new_pop.append([calc_distance(child2), child2])
+                p1, p2 = random.randint(0, lenCities - 1), random.randint(0, lenCities - 1)
+                child2[p1], child2[p2] = child2[p2], child2[p1]
 
-        population = new_pop
-        generations += 1
+            new_population.append([calcDistance(child1), child1])
+            new_population.append([calcDistance(child2), child2])
 
-        # Stop if target achieved
-        if sorted_pop[0][0] < target:
+        population = new_population
+        gen_number += 1
+
+        # Update Streamlit progress
+        if progress_callback:
+            progress_callback(gen_number, sorted(population)[0][0])
+
+        if sorted(population)[0][0] < TARGET:
             break
 
-    return min(population, key=lambda x: x[0]), generations
+    return sorted(population)[0], gen_number
 
 
-# -----------------------------
-# 🖼️ Visualization
-# -----------------------------
+def plot_route(cities, answer):
+    plt.figure(figsize=(10, 6))
 
-def draw_route(cities, best_path):
-    """Draw the cities and route on a 2D plane."""
-    plt.figure(figsize=(8, 6))
-    route = best_path[1]
-    x = [city[1] for city in route]
-    y = [city[2] for city in route]
+    # Plot nodes
+    for j in cities:
+        plt.plot(j[1], j[2], "ro")
+        plt.annotate(j[0], (j[1], j[2]))
 
-    # Draw route
-    plt.plot(x + [x[0]], y + [y[0]], 'b-', linewidth=2, label="Path")
-    plt.scatter(x, y, color="red", s=100, zorder=5)
+    # Draw path
+    for i in range(len(answer[1])):
+        try:
+            A = answer[1][i]
+            B = answer[1][i + 1]
+            plt.plot([A[1], B[1]], [A[2], B[2]])
+        except:
+            continue
 
-    # Annotate city names
-    for city in route:
-        plt.text(city[1] + 1, city[2] + 1, city[0], fontsize=10, color="black")
+    # Closing link
+    A = answer[1][0]
+    B = answer[1][-1]
+    plt.plot([A[1], B[1]], [A[2], B[2]])
 
-    plt.title("🧭 Traveling Salesman Path (Shortest Route Found)")
-    plt.xlabel("X-Coordinate (like longitude)")
-    plt.ylabel("Y-Coordinate (like latitude)")
-    plt.grid(True)
-    plt.legend()
+    plt.title("Optimized Route (Genetic Algorithm)")
     st.pyplot(plt)
 
 
-# -----------------------------
-# 🧠 Streamlit Interface
-# -----------------------------
 
-st.set_page_config(page_title="TSP - Genetic Algorithm", page_icon="🧬", layout="centered")
+# =====================================================
+#                 STREAMLIT UI
+# =====================================================
 
-st.title("🧬 Traveling Salesman Problem (TSP) — Genetic Algorithm Visualization")
-st.markdown("""
-This app helps you **visualize how a Genetic Algorithm finds the shortest route**
-for a salesman who must visit all cities once and return home.  
-Imagine each city as a dot on a map — we want to connect all dots using the shortest line possible!
-""")
+st.set_page_config(page_title="Genetic Algorithm - TSP Solver", layout="wide")
+st.title("🧬 Genetic Algorithm — Traveling Salesman Problem")
+st.markdown("### Visual, Interactive, Realistic TSP Solver")
 
-# Sidebar controls
-st.sidebar.header("⚙️ GA Settings")
-pop_size = st.sidebar.slider("Population Size", 100, 2000, 500, 100)
-mutation_rate = st.sidebar.slider("Mutation Rate", 0.0, 1.0, 0.1)
-crossover_rate = st.sidebar.slider("Crossover Rate", 0.0, 1.0, 0.9)
-tournament_size = st.sidebar.slider("Tournament Size", 2, 10, 4)
-target_distance = st.sidebar.number_input("Target Distance", 100.0, 1000.0, 400.0)
+# File upload section
+uploaded_file = st.file_uploader("📄 Upload your TSP .txt file", type=["txt"])
 
-if st.button("🚀 Start Algorithm"):
-    with st.spinner("Evolving shortest path... please wait!"):
-        cities = get_realistic_cities()
-        population, fittest = select_population(cities, pop_size)
-        best_solution, generations = genetic_algorithm(
-            population,
-            len(cities),
-            tournament_size,
-            mutation_rate,
-            crossover_rate,
-            target_distance,
-        )
+st.sidebar.header("⚙️ Parameters")
 
-    st.success(f"✅ Algorithm completed in {generations} generations!")
-    st.metric("Initial Distance", f"{fittest[0]:.2f}")
-    st.metric("Optimized Distance", f"{best_solution[0]:.2f}")
+POPULATION_SIZE = st.sidebar.slider("Population Size", 200, 5000, 1500)
+TOURNAMENT_SELECTION_SIZE = st.sidebar.slider("Tournament Selection Size", 2, 10, 4)
+MUTATION_RATE = st.sidebar.slider("Mutation Rate", 0.01, 0.5, 0.1)
+CROSSOVER_RATE = st.sidebar.slider("Crossover Rate", 0.1, 1.0, 0.9)
+TARGET = st.sidebar.slider("Target Distance", 200.0, 600.0, 450.0)
 
-    st.markdown("### 🗺️ Visualizing the Shortest Route:")
-    draw_route(cities, best_solution)
+if st.button("🚀 Run Genetic Algorithm"):
 
-    st.info("""
-**Explanation for Kids 👧🧒:**  
-- Each red dot is a *city*.  
-- The blue line shows the *salesman's travel route*.  
-- The algorithm keeps improving until it finds the *shortest total path* connecting all cities!  
-""")
+    if uploaded_file is None:
+        st.error("❌ Please upload a .txt file before running the algorithm.")
+        st.stop()
 
-else:
-    st.info("👈 Adjust parameters and click **Start Algorithm** to begin!")
+    # Load uploaded cities
+    cities = getCity(uploaded_file)
 
-st.caption("Created by **Sridhar Goud Malgani** — Simple, visual explanation of Genetic Algorithm for TSP")
+    # Progress containers
+    placeholder = st.empty()
+    chart_data = []
 
+    def update_progress(gen, best):
+        chart_data.append(best)
+        placeholder.line_chart(chart_data)
+
+    st.write("### ⏳ Running TSP Optimization...")
+
+    firstPop, firstFitest = selectPopulation(cities, POPULATION_SIZE)
+
+    answer, genNumber = geneticAlgorithm(
+        firstPop,
+        len(cities),
+        TOURNAMENT_SELECTION_SIZE,
+        MUTATION_RATE,
+        CROSSOVER_RATE,
+        TARGET,
+        progress_callback=update_progress
+    )
+
+    st.success("🎉 Optimization Completed!")
+
+    st.write(f"**Generations:** {genNumber}")
+    st.write(f"**Initial Best Distance:** `{firstFitest[0]}`")
+    st.write(f"**Optimized Distance:** `{answer[0]}`")
+
+    st.write("### 🗺️ Final Optimized Route")
+    plot_route(cities, answer)
+
+    st.write("---")
+    st.write("✔️ Built with Streamlit")
